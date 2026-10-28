@@ -2377,9 +2377,9 @@ const PremiumStore = {
       if (isPending) {
         receiptPerks.innerHTML = `
           <div style="font-weight: 700; color: #B45309; margin-bottom: 4px;">⏳ Status: Menunggu Verifikasi Staf Admin</div>
-          <div>• Bukti struk transfer Anda telah terkirim ke sistem NOTO.</div>
-          <div>• Buka <strong>Admin Portal</strong> untuk memeriksa & menyetujui transaksi ini.</div>
-          <div>• Atau klik tombol <em>Setujui Otomatis</em> di bawah untuk demo instan.</div>
+          <div>• Bukti pembayaran dan struk transfer Anda telah terkirim ke antrean verifikasi resmi sistem NOTO.</div>
+          <div>• Staf admin akan mencocokkan struk dengan mutasi rekening QRIS GoPay Merchant.</div>
+          <div>• Segera setelah disetujui staf admin, akun Anda otomatis aktif menjadi Pro Member.</div>
         `;
       } else {
         receiptPerks.innerHTML = `
@@ -2395,13 +2395,13 @@ const PremiumStore = {
       if (isPending) {
         receiptActions.innerHTML = `
           <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="PremiumStore.printReceipt()">
-            🖨️ Cetak Struk
+            🖨️ Cetak Bukti Tagihan
           </button>
-          <a href="admin.html" target="_blank" class="btn btn-secondary" style="flex: 1.2; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: #8B5CF6; border-color: #8B5CF6; font-weight: 700;">
-            🛡️ Buka Admin
+          <a href="admin.html" target="_blank" class="btn btn-secondary" style="flex: 1.2; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: #8B5CF6; border-color: #8B5CF6; font-weight: 700;" title="Buka Admin Operations Hub">
+            🛡️ Buka Portal Admin
           </a>
-          <button type="button" class="btn btn-primary" style="flex: 1.4; font-weight: 700; background: #8B5CF6; border-color: #8B5CF6;" onclick="PremiumStore.forceInstantApprove('${transactionRecord.id}')">
-            ⚡ Setujui Otomatis (Demo)
+          <button type="button" class="btn btn-primary" style="flex: 1; font-weight: 700;" onclick="Modals.close('modal-payment-success')">
+            ✓ Selesai
           </button>
         `;
       } else {

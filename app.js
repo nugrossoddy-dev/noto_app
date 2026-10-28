@@ -445,6 +445,23 @@ const App = {
         FocusMode.syncWithTimestamp();
       }
     });
+
+    // Cross-tab storage listener: when Admin approves transaction in admin.html, update app instantly!
+    window.addEventListener('storage', (e) => {
+      if (e.key === DataStorage.KEYS.USER || e.key === DataStorage.KEYS.PAYMENTS) {
+        this.updateUserProfileUI();
+        AICoach.updateQuotaUI();
+        if (typeof PremiumStore !== 'undefined') {
+          PremiumStore.render();
+        }
+        if (e.key === DataStorage.KEYS.USER) {
+          const user = DataStorage.getCurrentUser();
+          if (user && user.isPremium) {
+            Toast.show('🎉 Pembayaran Anda telah diverifikasi Admin NOTO! Fitur Pro kini aktif.', 'success');
+          }
+        }
+      }
+    });
   },
 
   handleHashRoute() {
@@ -2263,7 +2280,7 @@ const PremiumStore = {
     }
   },
 
-  // Confirm payment & simulate verification
+  // Confirm payment & submit for admin verification
   confirmPayment() {
     if (!this.currentOrder) return;
 
@@ -2273,52 +2290,28 @@ const PremiumStore = {
     // Show verification spinner modal
     Modals.open('modal-payment-verifying');
 
-    // Simulate verification delay (1.6s)
+    // Simulate transfer upload delay (1.2s)
     setTimeout(() => {
       Modals.close('modal-payment-verifying');
-      this.finalizeSuccessPayment();
-    }, 1600);
+      this.submitPendingPayment();
+    }, 1200);
   },
 
-  finalizeSuccessPayment() {
+  submitPendingPayment() {
     const order = this.currentOrder;
     if (!order) return;
 
-    const user = DataStorage.get(DataStorage.KEYS.USER, {});
+    const user = DataStorage.getCurrentUser() || { name: 'Alex Pratama', email: 'alex@example.com' };
     const now = new Date();
 
-    // Calculate subscription validity
-    let expiryDate = new Date();
-    if (order.itemTitle.includes('Yearly')) {
-      expiryDate.setFullYear(now.getFullYear() + 1);
-    } else if (order.itemTitle.includes('6-Month') || order.itemTitle.includes('6 Months')) {
-      expiryDate.setMonth(now.getMonth() + 6);
-    } else if (order.itemTitle.includes('Monthly')) {
-      expiryDate.setMonth(now.getMonth() + 1);
-    } else {
-      // Add-on lifetime
-      expiryDate.setFullYear(now.getFullYear() + 10);
-    }
-
-    // Update user profile
-    if (order.type === 'subscription' || !user.isPremium) {
-      user.isPremium = true;
-      user.plan = `${order.itemTitle} (Pro)`;
-      user.premiumExpiry = expiryDate.toISOString();
-    }
-    if (!user.unlockedAddons) user.unlockedAddons = [];
-    if (order.type === 'addon' && !user.unlockedAddons.includes(order.itemTitle)) {
-      user.unlockedAddons.push(order.itemTitle);
-    }
-    DataStorage.save(DataStorage.KEYS.USER, user);
-
-    // Save transaction record to payments history
+    // Save transaction record to payments history with Pending status
     const payments = DataStorage.get(DataStorage.KEYS.PAYMENTS, []);
     const transactionRecord = {
       id: order.id,
       title: order.itemTitle,
       priceStr: order.priceStr,
       priceNum: order.priceNum,
+      userName: user.name || 'Alex Pratama',
       type: order.type,
       date: now.toISOString(),
       dateFormatted: now.toLocaleDateString('id-ID', {
@@ -2330,9 +2323,9 @@ const PremiumStore = {
       }) + ' WIB',
       merchant: order.merchant || 'NOTO, DIGITAL & KREATIF',
       nmid: order.nmid || 'ID1026615042680',
-      status: 'Lunas (Verified)',
+      status: 'Menunggu Verifikasi (Pending)',
       hasProof: !!order.proofData,
-      proofData: order.proofData || null
+      proofData: order.proofData || 'assets/images/qris-noto.png'
     };
     payments.unshift(transactionRecord);
     DataStorage.save(DataStorage.KEYS.PAYMENTS, payments);
@@ -2341,30 +2334,143 @@ const PremiumStore = {
     const adminLogs = DataStorage.get(DataStorage.KEYS.ADMIN_LOGS, []);
     adminLogs.unshift({
       time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      text: `Transaksi pembayaran baru: ${transactionRecord.id} (${order.itemTitle} - ${order.priceStr}) [Lunas].`
+      text: `Transaksi baru masuk via QRIS: ${transactionRecord.id} (${order.itemTitle} - ${order.priceStr}) [Menunggu Verifikasi Admin].`
     });
     if (adminLogs.length > 50) adminLogs.pop();
     DataStorage.save(DataStorage.KEYS.ADMIN_LOGS, adminLogs);
 
-    // Populate Receipt Modal
+    this.showReceiptForTransaction(transactionRecord);
+    Toast.show(`Bukti pembayaran ${order.id} terkirim! Menunggu verifikasi di Admin Panel.`, 'info');
+  },
+
+  showReceiptForTransaction(transactionRecord) {
     const receiptInv = document.getElementById('receipt-invoice-no');
     const receiptDate = document.getElementById('receipt-date-time');
     const receiptItem = document.getElementById('receipt-item-name');
     const receiptTotal = document.getElementById('receipt-total-paid');
+    const receiptBadge = document.getElementById('receipt-status-badge');
+    const receiptPerks = document.getElementById('receipt-perks-list');
+    const receiptActions = document.getElementById('receipt-actions-container');
 
     if (receiptInv) receiptInv.textContent = transactionRecord.id;
-    if (receiptDate) receiptDate.textContent = transactionRecord.dateFormatted;
+    if (receiptDate) receiptDate.textContent = transactionRecord.dateFormatted || new Date(transactionRecord.date).toLocaleDateString('id-ID');
     if (receiptItem) receiptItem.textContent = transactionRecord.title;
     if (receiptTotal) receiptTotal.textContent = transactionRecord.priceStr;
 
-    // Refresh application states
+    const isPending = transactionRecord.status && transactionRecord.status.includes('Pending');
+
+    if (receiptBadge) {
+      if (isPending) {
+        receiptBadge.className = 'receipt-status-badge badge-pending';
+        receiptBadge.innerHTML = '<span>⏳</span> MENUNGGU VERIFIKASI ADMIN';
+        receiptBadge.style.background = '#FEF3C7';
+        receiptBadge.style.color = '#B45309';
+      } else {
+        receiptBadge.className = 'receipt-status-badge';
+        receiptBadge.innerHTML = '<span>✓</span> PEMBAYARAN TERVERIFIKASI';
+        receiptBadge.style.background = '#DCFCE7';
+        receiptBadge.style.color = '#15803D';
+      }
+    }
+
+    if (receiptPerks) {
+      if (isPending) {
+        receiptPerks.innerHTML = `
+          <div style="font-weight: 700; color: #B45309; margin-bottom: 4px;">⏳ Status: Menunggu Verifikasi Staf Admin</div>
+          <div>• Bukti struk transfer Anda telah terkirim ke sistem NOTO.</div>
+          <div>• Buka <strong>Admin Portal</strong> untuk memeriksa & menyetujui transaksi ini.</div>
+          <div>• Atau klik tombol <em>Setujui Otomatis</em> di bawah untuk demo instan.</div>
+        `;
+      } else {
+        receiptPerks.innerHTML = `
+          <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">🎉 Fitur Telah Aktif:</div>
+          <div>• Kuota AI Coach kini Tanpa Batas (Unlimited)</div>
+          <div>• Analisis Produktivitas Mendalam & Mode Fokus Penuh</div>
+          <div>• Akses Penuh ke Modul Pro & Auto Backup</div>
+        `;
+      }
+    }
+
+    if (receiptActions) {
+      if (isPending) {
+        receiptActions.innerHTML = `
+          <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="PremiumStore.printReceipt()">
+            🖨️ Cetak Struk
+          </button>
+          <a href="admin.html" target="_blank" class="btn btn-secondary" style="flex: 1.2; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: #8B5CF6; border-color: #8B5CF6; font-weight: 700;">
+            🛡️ Buka Admin
+          </a>
+          <button type="button" class="btn btn-primary" style="flex: 1.4; font-weight: 700; background: #8B5CF6; border-color: #8B5CF6;" onclick="PremiumStore.forceInstantApprove('${transactionRecord.id}')">
+            ⚡ Setujui Otomatis (Demo)
+          </button>
+        `;
+      } else {
+        receiptActions.innerHTML = `
+          <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="PremiumStore.printReceipt()">
+            🖨️ Cetak / Unduh Struk
+          </button>
+          <button type="button" class="btn btn-primary" style="flex: 1.4; font-weight: 700;" onclick="PremiumStore.finishSuccess()">
+            🚀 Masuk ke Dashboard
+          </button>
+        `;
+      }
+    }
+
+    // Refresh application states & open modal
+    this.render();
+    Modals.open('modal-payment-success');
+  },
+
+  forceInstantApprove(trxId) {
+    const payments = DataStorage.get(DataStorage.KEYS.PAYMENTS, []);
+    const trx = payments.find(p => p.id === trxId);
+    if (!trx) return;
+
+    trx.status = 'Lunas (Verified)';
+    DataStorage.save(DataStorage.KEYS.PAYMENTS, payments);
+
+    // Provision user membership in shared localStorage
+    const user = DataStorage.getCurrentUser() || { name: 'Alex Pratama', email: 'alex@example.com' };
+    const now = new Date();
+    let expiryDate = new Date();
+    if (trx.title.includes('Yearly')) {
+      expiryDate.setFullYear(now.getFullYear() + 1);
+    } else if (trx.title.includes('6-Month') || trx.title.includes('6 Months')) {
+      expiryDate.setMonth(now.getMonth() + 6);
+    } else if (trx.title.includes('Monthly')) {
+      expiryDate.setMonth(now.getMonth() + 1);
+    } else {
+      expiryDate.setFullYear(now.getFullYear() + 10);
+    }
+
+    user.isPremium = true;
+    user.plan = `${trx.title} (Pro)`;
+    user.premiumExpiry = expiryDate.toISOString();
+    DataStorage.save(DataStorage.KEYS.USER, user);
+
+    // Save in accounts if applicable
+    const accounts = DataStorage.get(DataStorage.KEYS.ACCOUNTS, []);
+    const accIdx = accounts.findIndex(a => a.email === user.email);
+    if (accIdx !== -1) {
+      accounts[accIdx].isPremium = true;
+      accounts[accIdx].plan = user.plan;
+      accounts[accIdx].premiumExpiry = user.premiumExpiry;
+      DataStorage.save(DataStorage.KEYS.ACCOUNTS, accounts);
+    }
+
+    // Audit log
+    const adminLogs = DataStorage.get(DataStorage.KEYS.ADMIN_LOGS, []);
+    adminLogs.unshift({
+      time: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      text: `Transaksi ${trx.id} disetujui (Lunas Verified). Pro membership diaktifkan.`
+    });
+    DataStorage.save(DataStorage.KEYS.ADMIN_LOGS, adminLogs);
+
     App.updateUserProfileUI();
     AICoach.updateQuotaUI();
     this.render();
-
-    // Open Success Receipt Modal
-    Modals.open('modal-payment-success');
-    Toast.show(`Pembayaran Berhasil! Selamat menikmati ${order.itemTitle}.`);
+    this.showReceiptForTransaction(trx);
+    Toast.show(`Transaksi ${trx.id} disetujui! Pro membership aktif.`, 'success');
   },
 
   finishSuccess() {
@@ -2380,18 +2486,7 @@ const PremiumStore = {
     const payments = DataStorage.get(DataStorage.KEYS.PAYMENTS, []);
     const invoice = payments.find(p => p.id === invoiceId);
     if (!invoice) return;
-
-    const receiptInv = document.getElementById('receipt-invoice-no');
-    const receiptDate = document.getElementById('receipt-date-time');
-    const receiptItem = document.getElementById('receipt-item-name');
-    const receiptTotal = document.getElementById('receipt-total-paid');
-
-    if (receiptInv) receiptInv.textContent = invoice.id;
-    if (receiptDate) receiptDate.textContent = invoice.dateFormatted || new Date(invoice.date).toLocaleDateString('id-ID');
-    if (receiptItem) receiptItem.textContent = invoice.title;
-    if (receiptTotal) receiptTotal.textContent = invoice.priceStr;
-
-    Modals.open('modal-payment-success');
+    this.showReceiptForTransaction(invoice);
   },
 
   // Render Premium view elements (active banner, buttons, and transactions list)

@@ -224,6 +224,9 @@ const AdminPanel = {
     // 4. Check session authentication
     this.isAuthenticated = sessionStorage.getItem('noto_admin_auth') === 'true';
 
+    // 5. Setup Real-time Watcher for incoming transactions across browser tabs
+    this.setupRealtimeWatcher();
+
     const authScreen = document.getElementById('admin-auth-screen');
     const mainApp = document.getElementById('admin-main-app');
 
@@ -240,6 +243,150 @@ const AdminPanel = {
         setTimeout(() => pinInput.focus(), 100);
       }
     }
+  },
+
+  // Synthesize notification audio chime using Web Audio API (no external sound files required)
+  playNotificationChime() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      
+      const playTone = (freq, start, duration) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.18, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + duration);
+      };
+
+      // Friendly 3-tone notification chime (E5 -> G#5 -> B5)
+      playTone(659.25, now, 0.22);
+      playTone(830.61, now + 0.14, 0.25);
+      playTone(987.77, now + 0.28, 0.45);
+    } catch (e) {
+      console.warn('Audio chime unsupported or autoplay prevented', e);
+    }
+  },
+
+  // Real-time synchronization watcher across browser tabs
+  setupRealtimeWatcher() {
+    const payments = DataStorage.get(DataStorage.KEYS.PAYMENTS, []);
+    this.lastKnownPendingCount = payments.filter(p => p.status && p.status.includes('Pending')).length;
+
+    // Cross-tab storage change event listener
+    window.addEventListener('storage', (e) => {
+      if (e.key === DataStorage.KEYS.PAYMENTS) {
+        this.checkIncomingPending(true);
+      }
+    });
+
+    // 2.5 second polling fallback for active tab changes
+    setInterval(() => {
+      if (this.isAuthenticated) {
+        this.checkIncomingPending(false);
+      }
+    }, 2500);
+  },
+
+  checkIncomingPending(fromStorageEvent = false) {
+    const payments = DataStorage.get(DataStorage.KEYS.PAYMENTS, []);
+    const pendingTrxs = payments.filter(p => p.status && p.status.includes('Pending'));
+    const currentCount = pendingTrxs.length;
+
+    if (typeof this.lastKnownPendingCount === 'undefined') {
+      this.lastKnownPendingCount = currentCount;
+      return;
+    }
+
+    if (currentCount > this.lastKnownPendingCount) {
+      const newest = pendingTrxs[0];
+      this.playNotificationChime();
+      const invId = newest ? newest.id : 'Baru';
+      const title = newest ? newest.title : 'QRIS';
+      Toast.show(`🔔 Transaksi Masuk Baru: ${invId} (${title}) - Perlu Verifikasi Admin!`, 'info');
+      
+      document.title = `(🔔 ${currentCount}) NOTO Admin Operations Hub`;
+      this.render();
+    } else if (currentCount < this.lastKnownPendingCount) {
+      document.title = currentCount > 0 ? `(🔔 ${currentCount}) NOTO Admin Operations Hub` : 'NOTO Admin Operations Hub';
+      this.render();
+    } else if (fromStorageEvent) {
+      this.render();
+    }
+
+    this.lastKnownPendingCount = currentCount;
+  },
+
+  // Simulate an incoming QRIS customer transaction with proof
+  simulateIncomingTrx() {
+    const orderNum = Math.floor(1000 + Math.random() * 9000);
+    const dateCode = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+    const invoiceId = `NOTO-INV-${dateCode}-${orderNum}`;
+    const now = new Date();
+    
+    const samplePlans = [
+      { title: 'Yearly Plan (1 Tahun Pro)', priceStr: 'Rp160.000', priceNum: 160000, type: 'subscription' },
+      { title: '6-Month Plan (Semesteran Pro)', priceStr: 'Rp100.000', priceNum: 100000, type: 'subscription' },
+      { title: 'Monthly Plan (Bulanan Pro)', priceStr: 'Rp20.000', priceNum: 20000, type: 'subscription' },
+      { title: 'AI Career Coach (Addon)', priceStr: 'Rp25.000', priceNum: 25000, type: 'addon' },
+      { title: 'AI Study Plan Generator (Addon)', priceStr: 'Rp20.000', priceNum: 20000, type: 'addon' }
+    ];
+    const chosen = samplePlans[Math.floor(Math.random() * samplePlans.length)];
+    const sampleUsers = ['Budi Santoso', 'Siti Rahmawati', 'Dimas Anggara', 'Clara Nadia', 'Reza Pahlevi', 'Aditya Wijaya'];
+    const userName = sampleUsers[Math.floor(Math.random() * sampleUsers.length)];
+
+    const payments = DataStorage.get(DataStorage.KEYS.PAYMENTS, []);
+    const newPending = {
+      id: invoiceId,
+      title: chosen.title,
+      priceStr: chosen.priceStr,
+      priceNum: chosen.priceNum,
+      userName: userName,
+      type: chosen.type,
+      date: now.toISOString(),
+      dateFormatted: now.toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }) + ' WIB',
+      merchant: 'NOTO, DIGITAL & KREATIF',
+      nmid: 'ID1026615042680',
+      status: 'Menunggu Verifikasi (Pending)',
+      hasProof: true,
+      proofData: 'assets/images/qris-noto.png',
+      method: 'QRIS'
+    };
+
+    payments.unshift(newPending);
+    DataStorage.save(DataStorage.KEYS.PAYMENTS, payments);
+
+    this.addLog(`⚡ Simulasi Transaksi Masuk via QRIS: ${invoiceId} oleh ${userName} (${chosen.title} - ${chosen.priceStr}) menanti verifikasi.`);
+    this.playNotificationChime();
+    this.lastKnownPendingCount = payments.filter(p => p.status && p.status.includes('Pending')).length;
+
+    this.switchTab('transactions');
+    this.filterTrx('pending');
+    this.render();
+
+    Toast.show(`🔔 Transaksi baru masuk! ${invoiceId} (${userName} - ${chosen.title}) siap diverifikasi.`, 'info');
+    
+    // Auto-open proof viewer modal after 350ms so user/lecturer can review & verify immediately
+    setTimeout(() => {
+      this.openProofViewer(invoiceId);
+    }, 350);
+  },
+
+  setFilter(status) {
+    this.filterTrx(status);
   },
 
   togglePinVisibility() {
@@ -359,6 +506,18 @@ const AdminPanel = {
     if (proUsersEl) proUsersEl.textContent = user.isPremium ? '1 Member' : '0 Member';
     if (merchantNameEl && merchantCfg.name) merchantNameEl.textContent = merchantCfg.name;
     if (countTrxTab) countTrxTab.textContent = payments.length;
+
+    // Update Incoming Pending Alert Banner
+    const banner = document.getElementById('admin-pending-alert-banner');
+    const countEl = document.getElementById('admin-pending-alert-count');
+    if (banner && countEl) {
+      if (pendingTrxs.length > 0) {
+        banner.style.display = 'flex';
+        countEl.textContent = pendingTrxs.length;
+      } else {
+        banner.style.display = 'none';
+      }
+    }
 
     this.renderTransactionsTable();
     this.renderUsersTable();

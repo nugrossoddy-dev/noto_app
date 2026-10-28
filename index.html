@@ -234,6 +234,9 @@
             <div class="sidebar-nav-item" data-view="app-settings" onclick="App.navigateTo('app-settings')">
               <span style="display: flex; align-items: center; gap: 8px;">⚙️ Settings</span>
             </div>
+            <a href="admin.html" class="sidebar-nav-item" style="text-decoration: none; color: #8B5CF6; font-weight: 700;" title="Buka Portal Administrator">
+              <span style="display: flex; align-items: center; gap: 8px;">🛡️ Admin Portal</span>
+            </a>
           </div>
 
           <div class="sidebar-footer">
@@ -260,6 +263,7 @@
               </div>
             </div>
             <div class="topbar-right">
+              <a href="admin.html" class="btn btn-ghost btn-sm" style="color: #8B5CF6; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" title="Buka Admin Operations Hub">🛡️ Admin</a>
               <button id="btn-install-app" class="btn btn-secondary btn-sm" style="display: none;" onclick="PWAInstaller.promptInstall()">📲 Install App</button>
               <button class="btn btn-secondary btn-sm" onclick="Modals.openQuickTask()">+ New Task</button>
               <button class="btn btn-primary btn-sm" onclick="App.navigateTo('app-focus')">Start Focus</button>
@@ -780,6 +784,26 @@
                   <button class="btn btn-secondary" onclick="DataStorage.exportDataJSON()">📥 Export Data (JSON)</button>
                   <button class="btn btn-coral" onclick="DataStorage.confirmResetData()">⚠️ Clear Workspace Data</button>
                 </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 24px 0;">
+
+                <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(99, 102, 241, 0.08)); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: var(--radius-lg); padding: 18px 20px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                      <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.25rem;">🛡️</span>
+                        <h3 style="font-size: 1.05rem; font-weight: 800; margin: 0;">Portal Administrator & Verifikasi QRIS</h3>
+                      </div>
+                      <p style="font-size: 0.84rem; color: var(--text-muted); margin-top: 4px; margin-bottom: 0;">
+                        Kelola verifikasi struk transaksi QRIS, atur harga paket langganan, dan pantau pengguna.
+                        <br><small style="color: #7C3AED; font-weight: 600;">PIN Staff Default: <code>noto2026</code> atau <code>admin123</code></small>
+                      </p>
+                    </div>
+                    <a href="admin.html" class="btn btn-primary" style="background: #8B5CF6; border-color: #8B5CF6; font-weight: 700; text-decoration: none;">
+                      Buka Admin Panel 🛡️
+                    </a>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -1094,7 +1118,7 @@
       <div class="modal-box modal-receipt-box">
         <div class="receipt-sheet" id="receipt-print-area">
           <div class="receipt-header">
-            <div class="receipt-status-badge">
+            <div class="receipt-status-badge" id="receipt-status-badge">
               <span>✓</span> PEMBAYARAN TERVERIFIKASI
             </div>
             <h2 style="font-size: 1.4rem; font-weight: 800; margin-bottom: 4px;">Kuitansi Resmi NOTO</h2>
@@ -1143,7 +1167,7 @@
           </div>
         </div>
 
-        <div style="display: flex; gap: 10px; margin-top: 20px;" class="no-print">
+        <div style="display: flex; gap: 10px; margin-top: 20px;" class="no-print" id="receipt-actions-container">
           <button type="button" class="btn btn-secondary" style="flex: 1;" onclick="PremiumStore.printReceipt()">
             🖨️ Cetak / Unduh Struk
           </button>
